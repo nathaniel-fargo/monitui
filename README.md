@@ -102,5 +102,7 @@ MIT
 
 ## Disclaimers
 
-This was vibe coded with Claude Opus 4.6. I tried to save some of the prompts in `doc/prompt`, but I missed most of them. Maybe I'll find a way to export them and share it with this.
-It works great on my machine (an Omarchy Hyprland setup), but no guarentees about yours. It passes all of the AI written tests, is written in Rust, and I've inspected enough of the code to feel confident publishing this. 
+This was responsibly vibe coded with Claude Opus 4.6. I tried to save some of the prompts in `doc/prompt`, but I missed most of them. Maybe I'll find a way to export them and share it with this.
+It works great on my machine (an Omarchy Hyprland setup), but please open an issue if you have problems with your own. It passes all of it's own tests, is written in Rust, and I've inspected enough of the code to feel confident publishing this.
+
+
