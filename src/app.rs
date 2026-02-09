@@ -12,6 +12,12 @@ const SCALES: &[f32] = &[1.0, 1.25, 1.5, 1.6666667, 2.0, 2.5, 3.0];
 const SLIDE_STEP: i32 = 50;
 const CONFIRM_DURATION: Duration = Duration::from_secs(10);
 
+struct DragState {
+    monitor_idx: usize,
+    offset_x: f64,
+    offset_y: f64,
+}
+
 #[derive(Clone, Debug)]
 pub enum Overlay {
     None,
@@ -37,6 +43,7 @@ pub struct App {
     prev_state: Option<Vec<MonitorInfo>>,
     pub list_area: Rect,
     pub canvas_area: Rect,
+    drag: Option<DragState>,
 }
 
 impl App {
@@ -65,6 +72,7 @@ impl App {
             prev_state: None,
             list_area: Rect::default(),
             canvas_area: Rect::default(),
+            drag: None,
         }
     }
 
@@ -94,8 +102,17 @@ impl App {
                         }
                     }
                     Event::Mouse(mouse) => {
-                        if let MouseEventKind::Down(MouseButton::Left) = mouse.kind {
-                            self.handle_click(mouse.column, mouse.row);
+                        match mouse.kind {
+                            MouseEventKind::Down(MouseButton::Left) => {
+                                self.handle_mouse_down(mouse.column, mouse.row);
+                            }
+                            MouseEventKind::Drag(MouseButton::Left) => {
+                                self.handle_mouse_drag(mouse.column, mouse.row);
+                            }
+                            MouseEventKind::Up(MouseButton::Left) => {
+                                self.handle_mouse_up();
+                            }
+                            _ => {}
                         }
                     }
                     _ => {}
@@ -261,7 +278,47 @@ impl App {
 
     // --- Mouse ---
 
-    fn handle_click(&mut self, col: u16, row: u16) {
+    fn terminal_to_monitor_coords(&self, col: u16, row: u16) -> Option<(f64, f64)> {
+        if col < self.canvas_area.x || col >= self.canvas_area.x + self.canvas_area.width
+            || row < self.canvas_area.y || row >= self.canvas_area.y + self.canvas_area.height
+        {
+            return None;
+        }
+
+        let enabled: Vec<_> = self.monitors.iter().filter(|m| !m.disabled).collect();
+        if enabled.is_empty() { return None; }
+
+        let min_x = enabled.iter().map(|m| m.x).min().unwrap_or(0);
+        let max_x = enabled.iter().map(|m| m.x + m.logical_width()).max().unwrap_or(1920);
+        let min_y = enabled.iter().map(|m| m.y).min().unwrap_or(0);
+        let max_y = enabled.iter().map(|m| m.y + m.logical_height()).max().unwrap_or(1080);
+
+        let content_w = (max_x - min_x) as f64;
+        let content_h = (max_y - min_y) as f64;
+        if content_w <= 0.0 || content_h <= 0.0 { return None; }
+
+        let inner_w = self.canvas_area.width.saturating_sub(2) as f64;
+        let inner_h = self.canvas_area.height.saturating_sub(2) as f64;
+        let click_x = (col - self.canvas_area.x).saturating_sub(1) as f64;
+        let click_y = (row - self.canvas_area.y).saturating_sub(1) as f64;
+
+        let char_aspect = 2.0;
+        let eff_w = inner_w;
+        let eff_h = inner_h * char_aspect;
+        let scale_x = eff_w / content_w;
+        let scale_y = eff_h / content_h;
+        let scale = scale_x.min(scale_y);
+        let scaled_w = content_w * scale;
+        let scaled_h = content_h * scale;
+        let pad_x = (eff_w - scaled_w) / 2.0;
+        let pad_y = (eff_h - scaled_h) / 2.0;
+
+        let mon_x = min_x as f64 + (click_x - pad_x) / scale;
+        let mon_y = min_y as f64 + (click_y * char_aspect - pad_y) / scale;
+        Some((mon_x, mon_y))
+    }
+
+    fn handle_mouse_down(&mut self, col: u16, row: u16) {
         if matches!(self.overlay, Overlay::Confirm { .. } | Overlay::Presets { .. }) {
             return;
         }
@@ -270,8 +327,6 @@ impl App {
         if col >= self.list_area.x && col < self.list_area.x + self.list_area.width
             && row >= self.list_area.y && row < self.list_area.y + self.list_area.height
         {
-            // Each monitor item: 1 name line + detail lines (4 for enabled, 2 for disabled)
-            // Account for border (1 row top)
             let content_y = row.saturating_sub(self.list_area.y + 1);
             let mut y_offset = 0u16;
             for (i, m) in self.monitors.iter().enumerate() {
@@ -285,49 +340,12 @@ impl App {
             return;
         }
 
-        // Check canvas pane click
-        if col >= self.canvas_area.x && col < self.canvas_area.x + self.canvas_area.width
-            && row >= self.canvas_area.y && row < self.canvas_area.y + self.canvas_area.height
-        {
+        // Check canvas pane click — start drag if monitor hit
+        if let Some((mon_x, mon_y)) = self.terminal_to_monitor_coords(col, row) {
             let enabled: Vec<_> = self.monitors.iter().enumerate()
                 .filter(|(_, m)| !m.disabled)
                 .collect();
 
-            if enabled.is_empty() { return; }
-
-            let min_x = enabled.iter().map(|(_, m)| m.x).min().unwrap_or(0);
-            let max_x = enabled.iter().map(|(_, m)| m.x + m.logical_width()).max().unwrap_or(1920);
-            let min_y = enabled.iter().map(|(_, m)| m.y).min().unwrap_or(0);
-            let max_y = enabled.iter().map(|(_, m)| m.y + m.logical_height()).max().unwrap_or(1080);
-
-            let content_w = (max_x - min_x) as f64;
-            let content_h = (max_y - min_y) as f64;
-            if content_w <= 0.0 || content_h <= 0.0 { return; }
-
-            // Map click position (in terminal chars) to monitor coordinate space
-            // Account for border
-            let inner_w = self.canvas_area.width.saturating_sub(2) as f64;
-            let inner_h = self.canvas_area.height.saturating_sub(2) as f64;
-            let click_x = (col - self.canvas_area.x).saturating_sub(1) as f64;
-            let click_y = (row - self.canvas_area.y).saturating_sub(1) as f64;
-
-            // Same aspect ratio logic as canvas_pane.rs
-            let char_aspect = 2.0;
-            let eff_w = inner_w;
-            let eff_h = inner_h * char_aspect;
-            let scale_x = eff_w / content_w;
-            let scale_y = eff_h / content_h;
-            let scale = scale_x.min(scale_y);
-            let scaled_w = content_w * scale;
-            let scaled_h = content_h * scale;
-            let pad_x = (eff_w - scaled_w) / 2.0;
-            let pad_y = (eff_h - scaled_h) / 2.0;
-
-            // Convert click to monitor coords
-            let mon_x = min_x as f64 + (click_x - pad_x) / scale;
-            let mon_y = min_y as f64 + (click_y * char_aspect - pad_y) / scale;
-
-            // Find which monitor contains this point
             for &(i, ref m) in &enabled {
                 let mx = m.x as f64;
                 let my = m.y as f64;
@@ -335,9 +353,47 @@ impl App {
                 let mh = m.logical_height() as f64;
                 if mon_x >= mx && mon_x < mx + mw && mon_y >= my && mon_y < my + mh {
                     self.selected = i;
+                    self.drag = Some(DragState {
+                        monitor_idx: i,
+                        offset_x: mon_x - mx,
+                        offset_y: mon_y - my,
+                    });
                     return;
                 }
             }
+        }
+    }
+
+    fn handle_mouse_drag(&mut self, col: u16, row: u16) {
+        let drag = match &self.drag {
+            Some(d) => d,
+            None => return,
+        };
+        let idx = drag.monitor_idx;
+        let off_x = drag.offset_x;
+        let off_y = drag.offset_y;
+
+        if let Some((mon_x, mon_y)) = self.terminal_to_monitor_coords(col, row) {
+            let new_x = (mon_x - off_x).round() as i32;
+            let new_y = (mon_y - off_y).round() as i32;
+            self.monitors[idx].x = new_x;
+            self.monitors[idx].y = new_y;
+            self.changed = true;
+        }
+    }
+
+    fn handle_mouse_up(&mut self) {
+        if let Some(drag) = self.drag.take() {
+            let _ = drag;
+            // Snap and normalize after drag
+            let mut layout_monitors = self.build_layout_monitors();
+            if !layout_monitors.is_empty() {
+                layout::auto_snap_all(&mut layout_monitors);
+                layout::normalize(&mut layout_monitors);
+                self.apply_layout_to_monitors(&layout_monitors);
+            }
+            self.changed = true;
+            self.status_msg = "Layout updated".to_string();
         }
     }
 
