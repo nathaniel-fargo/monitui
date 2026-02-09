@@ -22,16 +22,24 @@ pub fn draw(f: &mut Frame, selected: usize, names: &[String], saving: bool, inpu
 fn draw_preset_list(f: &mut Frame, selected: usize, names: &[String], area: Rect) {
     let mut items = Vec::new();
 
-    // "Most Recent Apply" entry
+    // "Most Recent Apply" entry - now [0]
     items.push(ListItem::new(Line::from(vec![
-        Span::styled("  ↻ ", Style::default().fg(Color::Blue)),
+        Span::styled(" [0] ", Style::default().fg(Color::DarkGray)),
+        Span::styled("↻ ", Style::default().fg(Color::Blue)),
         Span::styled("Most Recent Apply", Style::default().fg(Color::Blue)),
     ])));
 
-    // Saved presets
-    for name in names {
+    // Saved presets (numbered 1-9)
+    for (idx, name) in names.iter().enumerate() {
+        let num = if idx < 9 {
+            format!(" [{}] ", idx + 1)
+        } else {
+            "     ".to_string()  // No number for 10+
+        };
+
         items.push(ListItem::new(Line::from(vec![
-            Span::styled("  ● ", Style::default().fg(Color::Cyan)),
+            Span::styled(num, Style::default().fg(Color::DarkGray)),
+            Span::styled("● ", Style::default().fg(Color::Cyan)),
             Span::styled(name.clone(), Style::default().fg(Color::White)),
         ])));
     }

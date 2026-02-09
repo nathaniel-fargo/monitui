@@ -26,6 +26,7 @@ pub enum Overlay {
     Confirm {
         countdown_start: Instant,
         duration: Duration,
+        ready_for_input: bool,  // Prevents same keypress from confirming
     },
     Presets {
         selected: usize,
@@ -33,6 +34,7 @@ pub enum Overlay {
         saving: bool,
         input: String,
     },
+    ExternalChange,
 }
 
 pub struct App {
@@ -41,16 +43,21 @@ pub struct App {
     pub overlay: Overlay,
     pub status_msg: String,
     pub changed: bool,
+    pub show_all_monitors: bool,
     initial_state: Vec<MonitorInfo>,
     prev_state: Option<Vec<MonitorInfo>>,
     pub list_area: Rect,
     pub canvas_area: Rect,
     drag: Option<DragState>,
+    last_poll: Instant,
+    external_state: Vec<MonitorInfo>,
+    last_apply: Option<Instant>,  // Track when we last applied changes
 }
 
 impl App {
     pub fn new() -> Self {
-        let mut monitors = monitor::fetch_monitors();
+        // Always fetch all monitors, we'll filter display based on show_all_monitors flag
+        let mut monitors = monitor::fetch_monitors_all();
 
         // Restore workspace assignments from most recent save
         if let Some(recent) = preset::load_recent() {
@@ -64,17 +71,22 @@ impl App {
         }
 
         let initial_state = monitors.clone();
+        let external_state = monitors.clone();
         App {
             monitors,
             selected: 0,
             overlay: Overlay::None,
             status_msg: "Welcome to monitui".to_string(),
             changed: false,
+            show_all_monitors: false,
             initial_state,
             prev_state: None,
             list_area: Rect::default(),
             canvas_area: Rect::default(),
             drag: None,
+            last_poll: Instant::now(),
+            external_state,
+            last_apply: None,
         }
     }
 
@@ -82,8 +94,36 @@ impl App {
         loop {
             terminal.draw(|f| crate::ui::draw(f, self))?;
 
-            if let Overlay::Confirm { countdown_start, duration } = &self.overlay {
+            // Poll for external configuration changes every 3 seconds
+            // Continue polling during ExternalChange to get latest state
+            // But NEVER interrupt Confirm countdown or Presets menu
+            // Also enforce grace period after apply/confirm/revert (5 seconds for Hyprland to stabilize)
+            let in_grace_period = self.last_apply
+                .map(|t| t.elapsed() < Duration::from_secs(5))
+                .unwrap_or(false);
+
+            let should_poll = self.last_poll.elapsed() >= Duration::from_secs(3)
+                && !matches!(self.overlay, Overlay::Confirm { .. } | Overlay::Presets { .. })
+                && !in_grace_period;
+
+            if should_poll {
+                self.last_poll = Instant::now();
+                self.check_external_changes();
+            }
+
+            if let Overlay::Confirm { countdown_start, duration, ready_for_input } = &self.overlay {
                 let remaining = duration.saturating_sub(countdown_start.elapsed());
+                let elapsed = countdown_start.elapsed();
+
+                // Make ready for input after 200ms to avoid same keypress
+                if !ready_for_input && elapsed >= Duration::from_millis(200) {
+                    self.overlay = Overlay::Confirm {
+                        countdown_start: *countdown_start,
+                        duration: *duration,
+                        ready_for_input: true,
+                    };
+                }
+
                 if remaining.is_zero() {
                     self.revert_changes();
                     self.status_msg = "Timeout — changes reverted".to_string();
@@ -126,6 +166,9 @@ impl App {
     fn handle_key(&mut self, key: KeyEvent) -> bool {
         match &self.overlay {
             Overlay::Confirm { .. } => return self.handle_confirm_key(key),
+            Overlay::ExternalChange => {
+                return self.handle_external_change_key(key);
+            }
             Overlay::Presets { saving, .. } => {
                 if *saving {
                     self.handle_save_key(key);
@@ -142,19 +185,27 @@ impl App {
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => return false,
 
-            // Tab cycles monitor selection
+            // Tab cycles monitor selection (only through visible monitors)
             KeyCode::Tab => {
-                if !self.monitors.is_empty() {
-                    self.selected = (self.selected + 1) % self.monitors.len();
+                let visible = self.visible_monitors();
+                if !visible.is_empty() {
+                    let current_pos = visible.iter().position(|&i| i == self.selected);
+                    let next_pos = match current_pos {
+                        Some(pos) => (pos + 1) % visible.len(),
+                        None => 0,
+                    };
+                    self.selected = visible[next_pos];
                 }
             }
             KeyCode::BackTab => {
-                if !self.monitors.is_empty() {
-                    if self.selected == 0 {
-                        self.selected = self.monitors.len() - 1;
-                    } else {
-                        self.selected -= 1;
-                    }
+                let visible = self.visible_monitors();
+                if !visible.is_empty() {
+                    let current_pos = visible.iter().position(|&i| i == self.selected);
+                    let next_pos = match current_pos {
+                        Some(pos) => if pos == 0 { visible.len() - 1 } else { pos - 1 },
+                        None => visible.len() - 1,
+                    };
+                    self.selected = visible[next_pos];
                 }
             }
 
@@ -177,7 +228,7 @@ impl App {
             KeyCode::Char('L') | KeyCode::Right if shift => self.canvas_move(Direction::Right, true),
 
             KeyCode::Char('p') => self.open_presets(),
-            KeyCode::Char('a') => self.apply(),
+            KeyCode::Char('y') | KeyCode::Char(' ') | KeyCode::Enter => self.apply(),
 
             // Monitor config keys
             KeyCode::Char('d') => {
@@ -191,23 +242,36 @@ impl App {
                 if self.monitors[self.selected].disabled {
                     self.monitors[self.selected].disabled = false;
                     self.changed = true;
+                    self.apply_layout_adjustments();  // Auto-snap to avoid overlaps
                     self.status_msg = format!("Enabled {}", self.monitors[self.selected].name);
                 }
             }
             KeyCode::Char('s') => self.cycle_scale(),
             KeyCode::Char('+') | KeyCode::Char('=') => self.scale_up(),
             KeyCode::Char('-') => self.scale_down(),
-            KeyCode::Char('r') => {
+            KeyCode::Char('z') => {
                 self.monitors[self.selected].cycle_resolution();
                 self.changed = true;
+                self.apply_layout_adjustments();
                 self.status_msg = format!(
                     "{}: {}",
                     self.monitors[self.selected].name,
                     self.monitors[self.selected].resolution_string()
                 );
             }
-            KeyCode::Char(c) if c.is_ascii_digit() => {
-                let ws = if c == '0' { 10 } else { c as u32 - '0' as u32 };
+            KeyCode::Char('r') | KeyCode::Char('R') => {
+                self.monitors[self.selected].cycle_rotation();
+                self.changed = true;
+                self.apply_layout_adjustments();
+                self.status_msg = format!(
+                    "{}: rotation {}",
+                    self.monitors[self.selected].name,
+                    self.monitors[self.selected].rotation_string()
+                );
+            }
+            KeyCode::Char('t') => self.toggle_show_all(),
+            KeyCode::Char(c) if c.is_ascii_digit() && c != '0' => {
+                let ws = c as u32 - '0' as u32;
                 for (i, m) in self.monitors.iter_mut().enumerate() {
                     if i != self.selected {
                         m.workspaces.retain(|&w| w != ws);
@@ -282,6 +346,36 @@ impl App {
         }
     }
 
+    fn apply_layout_adjustments(&mut self) {
+        let mut layout_monitors = self.build_layout_monitors();
+        if layout_monitors.is_empty() { return; }
+
+        let enabled_idx = self.monitors.iter()
+            .take(self.selected + 1)
+            .filter(|m| !m.disabled)
+            .count()
+            .saturating_sub(1);
+
+        if enabled_idx >= layout_monitors.len() { return; }
+
+        let orig_x = layout_monitors[enabled_idx].x;
+        let orig_y = layout_monitors[enabled_idx].y;
+
+        layout::auto_snap_all(&mut layout_monitors);
+        layout::resolve_overlaps(&mut layout_monitors, enabled_idx, orig_x, orig_y);
+        layout::normalize(&mut layout_monitors);
+        self.apply_layout_to_monitors(&layout_monitors);
+    }
+
+    fn apply_layout_snap_all(&mut self) {
+        let mut layout_monitors = self.build_layout_monitors();
+        if layout_monitors.is_empty() { return; }
+
+        layout::auto_snap_all(&mut layout_monitors);
+        layout::normalize(&mut layout_monitors);
+        self.apply_layout_to_monitors(&layout_monitors);
+    }
+
     // --- Mouse ---
 
     fn terminal_to_monitor_coords(&self, col: u16, row: u16) -> Option<(f64, f64)> {
@@ -335,7 +429,8 @@ impl App {
         {
             let content_y = row.saturating_sub(self.list_area.y + 1);
             let mut y_offset = 0u16;
-            for (i, m) in self.monitors.iter().enumerate() {
+            for i in self.visible_monitors() {
+                let m = &self.monitors[i];
                 let item_height: u16 = if m.disabled { 2 } else { 4 };
                 if content_y >= y_offset && content_y < y_offset + item_height {
                     self.selected = i;
@@ -413,12 +508,25 @@ impl App {
     // --- Confirm ---
 
     fn handle_confirm_key(&mut self, key: KeyEvent) -> bool {
+        // Check if overlay is ready for input
+        let ready = if let Overlay::Confirm { ready_for_input, .. } = &self.overlay {
+            *ready_for_input
+        } else {
+            false
+        };
+
+        if !ready {
+            return true;
+        }
+
         match key.code {
-            KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Char(' ') => {
+            KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Char(' ') | KeyCode::Enter => {
                 self.overlay = Overlay::None;
                 // Confirmed — update the initial state to this new config
                 self.initial_state = self.monitors.clone();
+                self.external_state = self.monitors.clone();
                 self.prev_state = None;
+                self.last_apply = Some(Instant::now());  // Extend grace period
                 preset::save_recent(&self.monitors);
                 self.status_msg = "Configuration saved!".to_string();
             }
@@ -437,7 +545,11 @@ impl App {
             .unwrap_or_else(|| self.initial_state.clone());
         self.monitors = revert_to;
         match apply::apply_monitors(&self.monitors) {
-            Ok(()) => {}
+            Ok(()) => {
+                // Update external state to reflect the revert, so we don't trigger false external change detection
+                self.external_state = self.monitors.clone();
+                self.last_apply = Some(Instant::now());  // Extend grace period after revert
+            }
             Err(e) => {
                 self.status_msg = format!("Error reverting: {}", e);
             }
@@ -472,7 +584,7 @@ impl App {
                         *selected -= 1;
                     }
                 }
-                KeyCode::Enter => {
+                KeyCode::Char('y') | KeyCode::Char(' ') | KeyCode::Enter => {
                     let sel = *selected;
                     let names_clone = names.clone();
                     self.load_preset_entry(sel, &names_clone);
@@ -496,7 +608,8 @@ impl App {
                     self.overlay = Overlay::None;
                 }
                 KeyCode::Char(c) if c.is_ascii_digit() => {
-                    let idx = if c == '0' { 9 } else { (c as u32 - '1' as u32) as usize };
+                    // 0 = Most Recent (index 0), 1-9 = presets (indices 1-9)
+                    let idx = (c as u32 - '0' as u32) as usize;
                     if idx < total {
                         let names_clone = names.clone();
                         self.load_preset_entry(idx, &names_clone);
@@ -540,25 +653,32 @@ impl App {
         if idx == 0 {
             if let Some(configs) = preset::load_recent() {
                 preset::apply_preset_to_monitors(&mut self.monitors, &configs);
+                self.apply_layout_snap_all();  // Auto-snap after loading preset
                 self.changed = true;
-                self.status_msg = "Loaded most recent configuration".to_string();
+                self.overlay = Overlay::None;
+                self.apply();  // Auto-apply preset
             } else {
                 self.status_msg = "No recent configuration found".to_string();
+                self.overlay = Overlay::None;
             }
         } else if idx <= names.len() {
             let name = &names[idx - 1];
             match preset::load_preset(name) {
                 Ok(p) => {
                     preset::apply_preset_to_monitors(&mut self.monitors, &p.monitors);
+                    self.apply_layout_snap_all();  // Auto-snap after loading preset
                     self.changed = true;
-                    self.status_msg = format!("Loaded preset: {}", name);
+                    self.overlay = Overlay::None;
+                    self.apply();  // Auto-apply preset
                 }
                 Err(e) => {
                     self.status_msg = format!("Error loading preset: {}", e);
+                    self.overlay = Overlay::None;
                 }
             }
+        } else {
+            self.overlay = Overlay::None;
         }
-        self.overlay = Overlay::None;
     }
 
     // --- Apply ---
@@ -571,9 +691,13 @@ impl App {
         self.prev_state = Some(self.initial_state.clone());
         match apply::apply_monitors(&self.monitors) {
             Ok(()) => {
+                // Update external state to reflect our changes, so we don't trigger false external change detection
+                self.external_state = self.monitors.clone();
+                self.last_apply = Some(Instant::now());  // Start grace period
                 self.overlay = Overlay::Confirm {
                     countdown_start: Instant::now(),
                     duration: CONFIRM_DURATION,
+                    ready_for_input: false,  // Will become true after a brief delay
                 };
                 self.status_msg = "Applied — confirm to keep".to_string();
                 self.changed = false;
@@ -618,4 +742,159 @@ impl App {
             self.status_msg = format!("{}: scale {:.2}x", m.name, m.scale);
         }
     }
+
+    fn toggle_show_all(&mut self) {
+        self.show_all_monitors = !self.show_all_monitors;
+
+        // Just toggle the visibility flag - don't reload to preserve edits
+        // Ensure selection is valid for visible monitors
+        let visible_monitors = self.visible_monitors();
+        if visible_monitors.is_empty() {
+            self.selected = 0;
+        } else if self.selected >= self.monitors.len() {
+            self.selected = 0;
+        } else if !self.is_monitor_visible(self.selected) {
+            // Selected monitor is now hidden, select first visible
+            self.selected = visible_monitors[0];
+        }
+
+        self.status_msg = if self.show_all_monitors {
+            "Showing all monitors (including HEADLESS)".to_string()
+        } else {
+            "Showing active monitors only".to_string()
+        };
+    }
+
+    /// Returns indices of visible monitors based on show_all_monitors flag
+    fn visible_monitors(&self) -> Vec<usize> {
+        self.monitors
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| self.is_monitor_visible_by_ref(m))
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    fn is_monitor_visible(&self, index: usize) -> bool {
+        if index >= self.monitors.len() {
+            return false;
+        }
+        self.is_monitor_visible_by_ref(&self.monitors[index])
+    }
+
+    fn is_monitor_visible_by_ref(&self, monitor: &MonitorInfo) -> bool {
+        if self.show_all_monitors {
+            true
+        } else {
+            // Hide HEADLESS monitors unless show_all is enabled
+            !monitor.name.starts_with("HEADLESS-")
+        }
+    }
+
+    // --- External Change Detection ---
+
+    fn check_external_changes(&mut self) {
+        // Always fetch all monitors to match our internal storage
+        let current_external = monitor::fetch_monitors_all();
+
+        // Compare with last known external state
+        if !monitors_equal(&self.external_state, &current_external) {
+            // If already showing ExternalChange overlay, just update silently to latest state
+            // This ensures user acts on the most recent change, not stale data
+            if matches!(self.overlay, Overlay::ExternalChange) {
+                self.external_state = current_external;
+            } else {
+                // New external change detected, show overlay
+                self.external_state = current_external;
+                self.overlay = Overlay::ExternalChange;
+                self.status_msg = "External monitor configuration change detected!".to_string();
+            }
+        }
+    }
+
+    fn handle_external_change_key(&mut self, key: KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Char('o') | KeyCode::Char('O') => {
+                // Override - keep current edits, ignore external change
+                // Mark as changed so user can re-apply their configuration
+                self.changed = true;
+                self.overlay = Overlay::None;
+                self.status_msg = "Keeping your current configuration (override) - press 'y' to reapply".to_string();
+            }
+            KeyCode::Char('p') | KeyCode::Char('P') => {
+                // Pull - reload from external state
+                self.monitors = self.external_state.clone();
+                self.initial_state = self.external_state.clone();
+                self.changed = false;
+                self.overlay = Overlay::None;
+                self.selected = self.selected.min(self.monitors.len().saturating_sub(1));
+                self.status_msg = "Pulled latest configuration from system".to_string();
+            }
+            KeyCode::Char('q') | KeyCode::Esc => {
+                // Quit application
+                return false;
+            }
+            _ => {}
+        }
+        true
+    }
+}
+
+/// Compare two monitor lists for equality (ignores workspaces which change frequently)
+/// Matches monitors by NAME, not by array position (Hyprland can reorder them)
+fn monitors_equal(a: &[MonitorInfo], b: &[MonitorInfo]) -> bool {
+    use std::collections::HashMap;
+
+    // Build maps of monitor name -> monitor info
+    let map_a: HashMap<_, _> = a.iter().map(|m| (&m.name, m)).collect();
+    let map_b: HashMap<_, _> = b.iter().map(|m| (&m.name, m)).collect();
+
+    // Check for added monitors (monitors in b that aren't in a)
+    for name in map_b.keys() {
+        if !map_a.contains_key(name) {
+            return false;
+        }
+    }
+
+    // Check for removed monitors, BUT ignore monitors we disabled
+    // (Hyprland may stop reporting disabled monitors)
+    for (name, monitor_a) in &map_a {
+        if !map_b.contains_key(name) {
+            if !monitor_a.disabled {
+                // Only care if an enabled monitor disappeared
+                return false;
+            }
+            // Disabled monitor not in new list is fine - Hyprland may not report it
+            continue;
+        }
+    }
+
+    // Compare each monitor by name
+    for (name, m1) in &map_a {
+        let m2 = map_b.get(name).unwrap();  // Safe because we checked above
+
+        if m1.width != m2.width {
+            return false;
+        }
+        if m1.height != m2.height {
+            return false;
+        }
+        if m1.x != m2.x {
+            return false;
+        }
+        if m1.y != m2.y {
+            return false;
+        }
+        if m1.scale != m2.scale {
+            return false;
+        }
+        if m1.disabled != m2.disabled {
+            return false;
+        }
+        if m1.transform != m2.transform {
+            return false;
+        }
+    }
+
+    true
 }

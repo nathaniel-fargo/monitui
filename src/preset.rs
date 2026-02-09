@@ -19,6 +19,9 @@ pub struct MonitorConfig {
     pub y: i32,
     pub scale: f32,
     pub disabled: bool,
+    #[serde(default)]  // Defaults to 0 if missing (for backwards compatibility)
+    pub transform: u8,
+    #[serde(default)]  // Defaults to empty vec if missing
     pub workspaces: Vec<u32>,
 }
 
@@ -33,6 +36,7 @@ impl From<&MonitorInfo> for MonitorConfig {
             y: m.y,
             scale: m.scale,
             disabled: m.disabled,
+            transform: m.transform,
             workspaces: m.workspaces.clone(),
         }
     }
@@ -114,6 +118,7 @@ pub fn apply_preset_to_monitors(monitors: &mut Vec<MonitorInfo>, configs: &[Moni
             m.y = config.y;
             m.scale = config.scale;
             m.disabled = config.disabled;
+            m.transform = config.transform;
             m.workspaces = config.workspaces.clone();
         }
     }
@@ -171,6 +176,7 @@ mod tests {
                 y: 0,
                 scale: 1.5,
                 disabled: false,
+                transform: 0,
                 workspaces: vec![1, 2],
             },
         ];

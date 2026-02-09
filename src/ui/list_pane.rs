@@ -9,12 +9,24 @@ use ratatui::{
 use crate::app::App;
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect) {
-    let items: Vec<ListItem> = app
+    let visible: Vec<(usize, _)> = app
         .monitors
         .iter()
         .enumerate()
+        .filter(|(_, m)| {
+            // Filter based on show_all_monitors flag
+            if app.show_all_monitors {
+                true
+            } else {
+                !m.name.starts_with("HEADLESS-")
+            }
+        })
+        .collect();
+
+    let items: Vec<ListItem> = visible
+        .iter()
         .map(|(i, m)| {
-            let is_selected = i == app.selected;
+            let is_selected = *i == app.selected;
 
             let name_style = if m.disabled {
                 Style::default().fg(Color::DarkGray)
@@ -26,13 +38,19 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
 
             let marker = if is_selected { "▸ " } else { "  " };
 
-            let mut lines = vec![Line::from(vec![
-                Span::styled(marker, name_style),
-                Span::styled(
-                    m.description.chars().take(40).collect::<String>(),
-                    name_style,
-                ),
-            ])];
+            let is_headless = m.name.starts_with("HEADLESS-");
+            let mut name_spans = vec![Span::styled(marker, name_style)];
+
+            if is_headless {
+                name_spans.push(Span::styled("[HEADLESS] ", Style::default().fg(Color::Yellow)));
+            }
+
+            name_spans.push(Span::styled(
+                m.description.chars().take(40).collect::<String>(),
+                name_style,
+            ));
+
+            let mut lines = vec![Line::from(name_spans)];
 
             if m.disabled {
                 lines.push(Line::from(vec![
@@ -48,6 +66,7 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
                     Span::raw("    "),
                     Span::styled(m.resolution_string(), Style::default().fg(Color::Green)),
                     Span::styled(format!("  {:.2}x", m.scale), Style::default().fg(Color::Green)),
+                    Span::styled(format!("  {}", m.rotation_string()), Style::default().fg(Color::Green)),
                 ]));
                 lines.push(Line::from(vec![
                     Span::raw("    "),
@@ -84,6 +103,6 @@ pub fn draw(f: &mut Frame, app: &App, area: Rect) {
         .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
 
     let mut state = ListState::default();
-    state.select(Some(app.selected));
+    state.select(visible.iter().position(|(i, _)| *i == app.selected));
     f.render_stateful_widget(list, area, &mut state);
 }

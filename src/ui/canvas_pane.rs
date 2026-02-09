@@ -13,7 +13,15 @@ use crate::app::App;
 
 pub fn draw(f: &mut Frame, app: &App, area: Rect) {
     let enabled: Vec<_> = app.monitors.iter().enumerate()
-        .filter(|(_, m)| !m.disabled)
+        .filter(|(_, m)| {
+            // Filter for visible monitors (based on show_all_monitors flag) and enabled
+            let visible = if app.show_all_monitors {
+                true
+            } else {
+                !m.name.starts_with("HEADLESS-")
+            };
+            visible && !m.disabled
+        })
         .collect();
 
     if enabled.is_empty() {

@@ -33,18 +33,29 @@ pub struct MonitorInfo {
 
 impl MonitorInfo {
     pub fn logical_width(&self) -> i32 {
-        ((self.width as f32) / self.scale).ceil() as i32
+        let (w, _) = self.physical_dimensions();
+        ((w as f32) / self.scale).ceil() as i32
     }
 
     pub fn logical_height(&self) -> i32 {
-        ((self.height as f32) / self.scale).ceil() as i32
+        let (_, h) = self.physical_dimensions();
+        ((h as f32) / self.scale).ceil() as i32
+    }
+
+    /// Returns (width, height) accounting for rotation
+    fn physical_dimensions(&self) -> (u32, u32) {
+        match self.transform {
+            1 | 3 => (self.height, self.width),  // 90° or 270° - swap dimensions
+            _ => (self.width, self.height),      // 0° or 180° - keep dimensions
+        }
     }
 
     pub fn resolution_string(&self) -> String {
         if self.disabled {
             "Disabled".to_string()
         } else {
-            format!("{}x{}@{:.0}Hz", self.width, self.height, self.refresh_rate)
+            let (w, h) = self.physical_dimensions();
+            format!("{}x{}@{:.0}Hz", w, h, self.refresh_rate)
         }
     }
 
@@ -70,6 +81,21 @@ impl MonitorInfo {
             "preferred".to_string()
         }
     }
+
+    pub fn cycle_rotation(&mut self) {
+        // Cycle through 0 (normal), 1 (90°), 2 (180°), 3 (270°)
+        self.transform = (self.transform + 1) % 4;
+    }
+
+    pub fn rotation_string(&self) -> &str {
+        match self.transform {
+            0 => "0°",
+            1 => "90°",
+            2 => "180°",
+            3 => "270°",
+            _ => "0°",
+        }
+    }
 }
 
 fn parse_mode(mode_str: &str) -> Option<AvailableMode> {
@@ -88,7 +114,7 @@ fn parse_mode(mode_str: &str) -> Option<AvailableMode> {
     Some(AvailableMode { width, height, refresh })
 }
 
-pub fn fetch_monitors() -> Vec<MonitorInfo> {
+pub fn fetch_monitors_all() -> Vec<MonitorInfo> {
     let output = match Command::new("hyprctl")
         .args(["-j", "monitors", "all"])
         .output()
@@ -108,8 +134,7 @@ pub fn fetch_monitors() -> Vec<MonitorInfo> {
         }
     };
 
-    let mut all_monitors = Vec::new();
-    let mut non_headless_monitors = Vec::new();
+    let mut monitors = Vec::new();
 
     for m in raw {
         let name = match m.get("name").and_then(|v| v.as_str()) {
@@ -143,8 +168,8 @@ pub fn fetch_monitors() -> Vec<MonitorInfo> {
             })
             .unwrap_or_default();
 
-        let monitor = MonitorInfo {
-            name: name.clone(),
+        monitors.push(MonitorInfo {
+            name,
             description,
             width,
             height,
@@ -157,21 +182,8 @@ pub fn fetch_monitors() -> Vec<MonitorInfo> {
             workspaces,
             available_modes,
             selected_mode: None,
-        };
-
-        all_monitors.push(monitor.clone());
-        if !name.starts_with("HEADLESS-") {
-            non_headless_monitors.push(monitor);
-        }
+        });
     }
-
-    // Smart auto-detection: show HEADLESS monitors only when no enabled physical monitors exist
-    let has_enabled_physical = non_headless_monitors.iter().any(|m| !m.disabled);
-    let mut monitors = if has_enabled_physical {
-        non_headless_monitors
-    } else {
-        all_monitors
-    };
 
     // Sort: enabled first by x position, disabled at bottom
     monitors.sort_by(|a, b| {

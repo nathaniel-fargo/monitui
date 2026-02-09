@@ -3,6 +3,7 @@ pub mod canvas_pane;
 pub mod preset_menu;
 pub mod status_bar;
 pub mod confirm;
+pub mod external_change;
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -51,10 +52,13 @@ pub fn draw(f: &mut Frame, app: &mut App) {
 
     // Overlays
     match &app.overlay {
-        Overlay::Confirm { countdown_start, duration } => {
+        Overlay::Confirm { countdown_start, duration, .. } => {
             let elapsed = countdown_start.elapsed();
             let remaining = duration.saturating_sub(elapsed);
             confirm::draw(f, remaining, size);
+        }
+        Overlay::ExternalChange => {
+            external_change::draw(f, size);
         }
         Overlay::Presets { selected, names, saving, input } => {
             preset_menu::draw(f, *selected, names, *saving, input, size);

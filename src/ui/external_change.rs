@@ -5,45 +5,52 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph},
     Frame,
 };
-use std::time::Duration;
 
-pub fn draw(f: &mut Frame, remaining: Duration, area: Rect) {
-    let popup = centered_rect_with_min_size(50, 14, area);
+pub fn draw(f: &mut Frame, area: Rect) {
+    let popup = centered_rect_with_min_size(60, 16, area);
     f.render_widget(Clear, popup);
-
-    let secs = remaining.as_secs();
-    let bar_width = 20u16;
-    let filled = ((secs as f64 / 10.0) * bar_width as f64).ceil() as usize;
-    let empty = bar_width as usize - filled;
-    let bar = format!("[{}{}]", "█".repeat(filled), "░".repeat(empty));
-
-    let color = if secs <= 3 { Color::Red } else { Color::Yellow };
 
     let lines = vec![
         Line::from(""),
         Line::from(Span::styled(
-            "Keep this configuration?",
-            Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+            "⚠ External Configuration Change Detected",
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
         Line::from(Span::styled(
-            format!("Reverting in {}s", secs),
-            Style::default().fg(color),
+            "The monitor configuration has changed externally",
+            Style::default().fg(Color::White),
         )),
-        Line::from(Span::styled(bar, Style::default().fg(color))),
-        Line::from(""),
         Line::from(Span::styled(
-            "[Y / Space] Keep   [N / Esc] Revert",
+            "(e.g., monitor unplugged, hyprctl command run)",
             Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            "What would you like to do?",
+            Style::default().fg(Color::White),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            "[O] Override - Keep your current edits",
+            Style::default().fg(Color::Cyan),
+        )),
+        Line::from(Span::styled(
+            "[P] Pull - Reload from system configuration",
+            Style::default().fg(Color::Green),
+        )),
+        Line::from(Span::styled(
+            "[Q/Esc] Quit application",
+            Style::default().fg(Color::Red),
         )),
     ];
 
     let para = Paragraph::new(lines)
         .block(
             Block::default()
-                .title(" Confirm ")
+                .title(" Configuration Change ")
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(color)),
+                .border_style(Style::default().fg(Color::Yellow)),
         )
         .alignment(Alignment::Center);
 
@@ -52,8 +59,8 @@ pub fn draw(f: &mut Frame, remaining: Duration, area: Rect) {
 
 /// Create a centered popup rect with minimum dimensions
 fn centered_rect_with_min_size(min_width: u16, min_height: u16, area: Rect) -> Rect {
-    let width = min_width.max((area.width * 50) / 100);
-    let height = min_height.max((area.height * 25) / 100);
+    let width = min_width.max((area.width * 60) / 100);
+    let height = min_height.max((area.height * 30) / 100);
 
     let popup_layout = Layout::default()
         .direction(Direction::Vertical)

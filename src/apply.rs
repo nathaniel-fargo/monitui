@@ -24,7 +24,8 @@ fn generate_monitors_conf(monitors: &[MonitorInfo]) -> String {
             let mode = m.mode_string();
             let pos = format!("{}x{}", m.x, m.y);
             let scale = format_scale(m.scale);
-            lines.push(format!("monitor = {}, {}, {}, {}", m.name, mode, pos, scale));
+            let transform = format!("transform, {}", m.transform);
+            lines.push(format!("monitor = {}, {}, {}, {}, {}", m.name, mode, pos, scale, transform));
         }
     }
 
@@ -42,7 +43,7 @@ pub fn apply_monitors(monitors: &[MonitorInfo]) -> Result<(), String> {
             let mode = monitor.mode_string();
             let pos = format!("{}x{}", monitor.x, monitor.y);
             let scale = format_scale(monitor.scale);
-            format!("{},{},{},{}", monitor.name, mode, pos, scale)
+            format!("{},{},{},{},transform,{}", monitor.name, mode, pos, scale, monitor.transform)
         };
 
         let output = Command::new("hyprctl")
@@ -70,6 +71,18 @@ pub fn apply_monitors(monitors: &[MonitorInfo]) -> Result<(), String> {
     let content = generate_monitors_conf(monitors);
     fs::write(&conf_path, &content)
         .map_err(|e| format!("Failed to write {}: {}", conf_path.display(), e))?;
+
+    // Reload Hyprland configuration to apply changes
+    let reload_output = Command::new("hyprctl")
+        .args(["reload"])
+        .output()
+        .map_err(|e| format!("Failed to run hyprctl reload: {}", e))?;
+    if !reload_output.status.success() {
+        return Err(format!(
+            "hyprctl reload failed: {}",
+            String::from_utf8_lossy(&reload_output.stderr).trim()
+        ));
+    }
 
     Command::new("notify-send")
         .args(["monitui", "Monitor configuration applied"])
