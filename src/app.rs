@@ -152,10 +152,10 @@ impl App {
             KeyCode::Char('l') | KeyCode::Right if !shift => {
                 self.canvas_move(Direction::Right, false);
             }
-            KeyCode::Char('H') => self.canvas_move(Direction::Left, true),
-            KeyCode::Char('J') => self.canvas_move(Direction::Down, true),
-            KeyCode::Char('K') => self.canvas_move(Direction::Up, true),
-            KeyCode::Char('L') => self.canvas_move(Direction::Right, true),
+            KeyCode::Char('H') | KeyCode::Left if shift => self.canvas_move(Direction::Left, true),
+            KeyCode::Char('J') | KeyCode::Down if shift => self.canvas_move(Direction::Down, true),
+            KeyCode::Char('K') | KeyCode::Up if shift => self.canvas_move(Direction::Up, true),
+            KeyCode::Char('L') | KeyCode::Right if shift => self.canvas_move(Direction::Right, true),
 
             KeyCode::Char('p') => self.open_presets(),
             KeyCode::Char('a') => self.apply(),
