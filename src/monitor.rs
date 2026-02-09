@@ -108,18 +108,14 @@ pub fn fetch_monitors() -> Vec<MonitorInfo> {
         }
     };
 
-    let mut monitors = Vec::new();
+    let mut all_monitors = Vec::new();
+    let mut non_headless_monitors = Vec::new();
 
     for m in raw {
         let name = match m.get("name").and_then(|v| v.as_str()) {
             Some(n) => n.to_string(),
             None => continue,
         };
-
-        // Filter headless monitors
-        if name.starts_with("HEADLESS-") {
-            continue;
-        }
 
         let description = m.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
         let width = m.get("width").and_then(|v| v.as_u64()).unwrap_or(1920) as u32;
@@ -147,8 +143,8 @@ pub fn fetch_monitors() -> Vec<MonitorInfo> {
             })
             .unwrap_or_default();
 
-        monitors.push(MonitorInfo {
-            name,
+        let monitor = MonitorInfo {
+            name: name.clone(),
             description,
             width,
             height,
@@ -161,8 +157,20 @@ pub fn fetch_monitors() -> Vec<MonitorInfo> {
             workspaces,
             available_modes,
             selected_mode: None,
-        });
+        };
+
+        all_monitors.push(monitor.clone());
+        if !name.starts_with("HEADLESS-") {
+            non_headless_monitors.push(monitor);
+        }
     }
+
+    // Smart auto-detection: use non-headless if available
+    let mut monitors = if non_headless_monitors.is_empty() {
+        all_monitors
+    } else {
+        non_headless_monitors
+    };
 
     // Sort: enabled first by x position, disabled at bottom
     monitors.sort_by(|a, b| {
