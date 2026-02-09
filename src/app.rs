@@ -8,7 +8,7 @@ use crate::layout::{self, Direction, LayoutMonitor};
 use crate::monitor::{self, MonitorInfo};
 use crate::preset;
 
-const SCALES: &[f32] = &[1.0, 1.25, 1.5, 1.6666667, 2.0, 2.5, 3.0];
+const SCALES: &[f32] = &[1.0, 1.2, 1.5, 2.0, 3.0];
 const SLIDE_STEP: i32 = 50;
 const CONFIRM_DURATION: Duration = Duration::from_secs(10);
 

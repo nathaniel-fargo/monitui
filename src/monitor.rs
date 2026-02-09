@@ -165,11 +165,12 @@ pub fn fetch_monitors() -> Vec<MonitorInfo> {
         }
     }
 
-    // Smart auto-detection: use non-headless if available
-    let mut monitors = if non_headless_monitors.is_empty() {
-        all_monitors
-    } else {
+    // Smart auto-detection: show HEADLESS monitors only when no enabled physical monitors exist
+    let has_enabled_physical = non_headless_monitors.iter().any(|m| !m.disabled);
+    let mut monitors = if has_enabled_physical {
         non_headless_monitors
+    } else {
+        all_monitors
     };
 
     // Sort: enabled first by x position, disabled at bottom

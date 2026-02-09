@@ -25,7 +25,12 @@ Growing up on MacOS everything just worked. Switching to Arch/hyprland I feel as
 ## Installation
 
 ```sh
+# Cargo
 cargo install monitui
+# Arch (yay)
+yay -S monitui
+# Arch (paru)
+yay -S monitui
 ```
 
 Or, if you wanna do things yourself:
