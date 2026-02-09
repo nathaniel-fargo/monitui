@@ -1,6 +1,6 @@
 # Maintainer: Nathaniel Fargo <nathaniel.fargo@gmail.com>
 pkgname=monitui
-pkgver=0.2.0
+pkgver=0.2.1
 pkgrel=1
 pkgdesc="A delightfully minimal TUI for wrangling Hyprland monitors"
 arch=('x86_64')

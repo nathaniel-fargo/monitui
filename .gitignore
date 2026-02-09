@@ -1,3 +1,4 @@
 /target
 .cargo/
 *.mp4
+*.tar.gz
