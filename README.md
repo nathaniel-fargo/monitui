@@ -19,6 +19,9 @@ Growing up on MacOS everything just worked. Switching to Arch/hyprland I feel as
 - **Live preview** - See changes before you apply them
 - **Safety net** - 10-second confirmation window (your monitor config should be more forgiving than `rm hdmi.monitor`)
 - **Workspace assignment** - I want my workspaces in order, nice and tidy. The presets menu can also restore where you last left them
+- **Rotation support** - Cycle monitor rotation directly in the TUI
+- **External change detection** - Warns you if monitor config changes outside `monitui`
+- **CLI mode** - List/apply presets and enable/disable monitors without opening the TUI
 
 ![Three monitors](media/three-monitors.png)
 
@@ -49,6 +52,16 @@ Just run it:
 monitui
 ```
 
+Or use CLI commands:
+
+```bash
+monitui --list
+monitui --presets
+monitui --preset <name>
+monitui --enable <monitor>
+monitui --disable <monitor>
+```
+
 ### Keybindings
 
 | Key | Action |
@@ -59,11 +72,13 @@ monitui
 | `1-9` | Assign workspace |
 | `W` | Clear workspace assignments |
 | `d` / `e` | Disable / enable monitor |
-| `r` | Cycle resolution |
+| `z` | Cycle resolution |
+| `r` | Cycle rotation |
 | `s` | Cycle scale |
 | `+` / `-` | Adjust scale |
-| `p` | Presets menu (press `1-9` to load, `s` to save) |
-| `a` | Apply configuration |
+| `t` | Toggle showing HEADLESS monitors |
+| `p` | Presets menu (press `0-9` to load, `s` to save) |
+| `y` / `Space` / `Enter` | Apply configuration |
 | `q` / `Esc` | Quit |
 
 You can also click on monitors with your mouse like it's the future.
@@ -110,5 +125,4 @@ MIT
 
 This was responsibly vibe coded with Claude Opus 4.6. I tried to save some of the prompts in `doc/prompt`, but I missed most of them. Maybe I'll find a way to export them and share it with this.
 It works great on my machine (an Omarchy Hyprland setup), but please open an issue if you have problems with your own. It passes all of it's own tests, is written in Rust, and I've inspected enough of the code to feel confident publishing this.
-
 
