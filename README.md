@@ -24,15 +24,16 @@ Growing up on MacOS everything just worked. Switching to Arch/hyprland I feel as
 
 ## Installation
 
-```bash
-cargo install --path .
+```sh
+cargo install monitui
 ```
 
 Or, if you wanna do things yourself:
 
-```bash
+```sh
 cargo build --release
-sudo cp target/release/monitui /usr/local/bin/
+# optional:
+# sudo cp target/release/monitui /usr/local/bin/
 ```
 
 ## Usage

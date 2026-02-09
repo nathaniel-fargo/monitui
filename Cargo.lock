@@ -234,7 +234,7 @@ dependencies = [
 
 [[package]]
 name = "monitui"
-version = "0.2.0"
+version = "0.2.0-1"
 dependencies = [
  "crossterm",
  "dirs",
