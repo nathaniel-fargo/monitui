@@ -495,6 +495,13 @@ impl App {
                 KeyCode::Esc => {
                     self.overlay = Overlay::None;
                 }
+                KeyCode::Char(c) if c.is_ascii_digit() => {
+                    let idx = if c == '0' { 9 } else { (c as u32 - '1' as u32) as usize };
+                    if idx < total {
+                        let names_clone = names.clone();
+                        self.load_preset_entry(idx, &names_clone);
+                    }
+                }
                 _ => {}
             }
         }

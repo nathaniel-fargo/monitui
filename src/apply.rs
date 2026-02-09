@@ -79,11 +79,6 @@ pub fn apply_monitors(monitors: &[MonitorInfo]) -> Result<(), String> {
     Ok(())
 }
 
-/// Revert: apply old config live AND restore monitors.conf.
-pub fn revert_monitors(monitors: &[MonitorInfo]) -> Result<(), String> {
-    apply_monitors(monitors)
-}
-
 fn format_scale(scale: f32) -> String {
     if (scale - scale.round()).abs() < 0.001 {
         format!("{}", scale as u32)

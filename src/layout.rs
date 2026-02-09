@@ -69,87 +69,6 @@ pub fn shared_edge(a: &LayoutMonitor, b: &LayoutMonitor) -> Option<SharedEdge> {
     None
 }
 
-/// Find the neighbor of `selected` in the given direction.
-/// Returns the index of the neighbor.
-pub fn find_neighbor(monitors: &[LayoutMonitor], selected: usize, dir: Direction) -> Option<usize> {
-    let sel = &monitors[selected];
-    let mut best: Option<(usize, i32)> = None;
-
-    for (i, m) in monitors.iter().enumerate() {
-        if i == selected { continue; }
-
-        let qualifies = match dir {
-            Direction::Left => m.right() <= sel.x && sel.vertical_overlap(m).is_some(),
-            Direction::Right => m.x >= sel.right() && sel.vertical_overlap(m).is_some(),
-            Direction::Up => m.bottom() <= sel.y && sel.horizontal_overlap(m).is_some(),
-            Direction::Down => m.y >= sel.bottom() && sel.horizontal_overlap(m).is_some(),
-        };
-
-        if qualifies {
-            let dist = match dir {
-                Direction::Left => sel.x - m.right(),
-                Direction::Right => m.x - sel.right(),
-                Direction::Up => sel.y - m.bottom(),
-                Direction::Down => m.y - sel.bottom(),
-            };
-            if best.is_none() || dist < best.unwrap().1 {
-                best = Some((i, dist));
-            }
-        }
-    }
-    best.map(|(i, _)| i)
-}
-
-/// Find the nearest neighbor in a direction, ignoring edge sharing (for snap operations).
-pub fn find_nearest(monitors: &[LayoutMonitor], selected: usize, dir: Direction) -> Option<usize> {
-    let sel = &monitors[selected];
-    let mut best: Option<(usize, i32)> = None;
-
-    for (i, m) in monitors.iter().enumerate() {
-        if i == selected { continue; }
-
-        let dist = match dir {
-            Direction::Left => sel.x - m.right(),
-            Direction::Right => m.x - sel.right(),
-            Direction::Up => sel.y - m.bottom(),
-            Direction::Down => m.y - sel.bottom(),
-        };
-
-        // Must be in the right direction (positive distance)
-        if dist < 0 { continue; }
-
-        if best.is_none() || dist < best.unwrap().1 {
-            best = Some((i, dist));
-        }
-    }
-
-    // If no monitor is strictly in that direction, find closest by center
-    if best.is_none() {
-        let sel_cx = sel.x + sel.w / 2;
-        let sel_cy = sel.y + sel.h / 2;
-        let mut closest: Option<(usize, i32)> = None;
-        for (i, m) in monitors.iter().enumerate() {
-            if i == selected { continue; }
-            let cx = m.x + m.w / 2;
-            let cy = m.y + m.h / 2;
-            let is_correct_side = match dir {
-                Direction::Left => cx < sel_cx,
-                Direction::Right => cx > sel_cx,
-                Direction::Up => cy < sel_cy,
-                Direction::Down => cy > sel_cy,
-            };
-            if !is_correct_side { continue; }
-            let d = (cx - sel_cx).abs() + (cy - sel_cy).abs();
-            if closest.is_none() || d < closest.unwrap().1 {
-                closest = Some((i, d));
-            }
-        }
-        return closest.map(|(i, _)| i);
-    }
-
-    best.map(|(i, _)| i)
-}
-
 /// Move the selected monitor in the given direction.
 /// - Perpendicular to shared edge: swap positions
 /// - Parallel to shared edge: slide along it
@@ -335,33 +254,6 @@ pub fn slide_monitor(monitors: &mut Vec<LayoutMonitor>, selected: usize, neighbo
     }
 }
 
-/// Snap `selected` to a specific side of `target`.
-pub fn snap_to_side(monitors: &mut Vec<LayoutMonitor>, selected: usize, target: usize, dir: Direction) {
-    let tw = monitors[target].w;
-    let th = monitors[target].h;
-    let tx = monitors[target].x;
-    let ty = monitors[target].y;
-
-    match dir {
-        Direction::Left => {
-            monitors[selected].x = tx - monitors[selected].w;
-            monitors[selected].y = ty;
-        }
-        Direction::Right => {
-            monitors[selected].x = tx + tw;
-            monitors[selected].y = ty;
-        }
-        Direction::Up => {
-            monitors[selected].x = tx;
-            monitors[selected].y = ty - monitors[selected].h;
-        }
-        Direction::Down => {
-            monitors[selected].x = tx;
-            monitors[selected].y = ty + th;
-        }
-    }
-}
-
 /// Snap `selected` to the far side of the entire layout in the given direction.
 /// E.g. Shift+L moves the monitor to the rightmost position, Shift+H to the leftmost.
 pub fn snap_to_far_side(monitors: &mut Vec<LayoutMonitor>, selected: usize, dir: Direction) {
@@ -422,38 +314,6 @@ pub fn snap_to_far_side(monitors: &mut Vec<LayoutMonitor>, selected: usize, dir:
             monitors[selected].y = max_y;
             monitors[selected].x = ref_x;
         }
-    }
-}
-
-/// Validate that all monitors form a connected graph (each shares an edge with at least one other).
-pub fn is_layout_connected(monitors: &[LayoutMonitor]) -> bool {
-    if monitors.len() <= 1 { return true; }
-
-    let mut visited = vec![false; monitors.len()];
-    let mut stack = vec![0usize];
-    visited[0] = true;
-
-    while let Some(current) = stack.pop() {
-        for (i, m) in monitors.iter().enumerate() {
-            if visited[i] { continue; }
-            if shared_edge(&monitors[current], m).is_some() {
-                visited[i] = true;
-                stack.push(i);
-            }
-        }
-    }
-
-    visited.iter().all(|&v| v)
-}
-
-/// Recalculate positions: place all monitors left to right with no gaps.
-/// Preserves y offsets.
-pub fn recalculate_horizontal(monitors: &mut Vec<LayoutMonitor>) {
-    monitors.sort_by_key(|m| m.x);
-    let mut x = 0;
-    for m in monitors.iter_mut() {
-        m.x = x;
-        x += m.w;
     }
 }
 
@@ -759,39 +619,6 @@ mod tests {
         assert_eq!(m[0].y, 0);
     }
 
-    // --- connected layout tests ---
-
-    #[test]
-    fn test_connected_side_by_side() {
-        let m = three_side_by_side();
-        assert!(is_layout_connected(&m));
-    }
-
-    #[test]
-    fn test_connected_single() {
-        let m = vec![LayoutMonitor { id: "A".into(), x: 0, y: 0, w: 1920, h: 1080 }];
-        assert!(is_layout_connected(&m));
-    }
-
-    #[test]
-    fn test_disconnected() {
-        let m = vec![
-            LayoutMonitor { id: "A".into(), x: 0, y: 0, w: 1920, h: 1080 },
-            LayoutMonitor { id: "B".into(), x: 5000, y: 5000, w: 1920, h: 1080 },
-        ];
-        assert!(!is_layout_connected(&m));
-    }
-
-    #[test]
-    fn test_connected_l_shape() {
-        let m = vec![
-            LayoutMonitor { id: "A".into(), x: 0, y: 0, w: 1920, h: 1080 },
-            LayoutMonitor { id: "B".into(), x: 1920, y: 0, w: 1920, h: 1080 },
-            LayoutMonitor { id: "C".into(), x: 1920, y: 1080, w: 1920, h: 1080 },
-        ];
-        assert!(is_layout_connected(&m));
-    }
-
     // --- normalize tests ---
 
     #[test]
@@ -805,30 +632,6 @@ mod tests {
         assert_eq!(m[0].y, 0);
         assert_eq!(m[1].x, 1920);
         assert_eq!(m[1].y, 0);
-    }
-
-    // --- snap_to_side tests ---
-
-    #[test]
-    fn test_snap_to_right() {
-        let mut m = vec![
-            LayoutMonitor { id: "A".into(), x: 0, y: 0, w: 1920, h: 1080 },
-            LayoutMonitor { id: "B".into(), x: 5000, y: 5000, w: 2560, h: 1440 },
-        ];
-        snap_to_side(&mut m, 1, 0, Direction::Right);
-        assert_eq!(m[1].x, 1920);
-        assert_eq!(m[1].y, 0);
-    }
-
-    #[test]
-    fn test_snap_above() {
-        let mut m = vec![
-            LayoutMonitor { id: "A".into(), x: 0, y: 1080, w: 1920, h: 1080 },
-            LayoutMonitor { id: "B".into(), x: 5000, y: 5000, w: 2560, h: 1440 },
-        ];
-        snap_to_side(&mut m, 1, 0, Direction::Up);
-        assert_eq!(m[1].x, 0);
-        assert_eq!(m[1].y, 1080 - 1440);
     }
 
     // --- auto_snap_all tests ---
@@ -866,7 +669,11 @@ mod tests {
         ];
         swap_monitors(&mut m, 0, 1);
         auto_snap_all(&mut m);
-        assert!(is_layout_connected(&m), "Layout should be connected after swap+snap: {:?}", m);
+        // Every monitor should touch at least one other
+        for i in 0..m.len() {
+            let touches = (0..m.len()).any(|j| j != i && shared_edge(&m[i], &m[j]).is_some());
+            assert!(touches, "Monitor {} should touch another: {:?}", m[i].id, m);
+        }
     }
 
     // --- snap_to_far_side tests ---
@@ -901,21 +708,4 @@ mod tests {
         assert!(m[1].y > 0, "B should be below: {:?}", m);
     }
 
-    // --- find_neighbor tests ---
-
-    #[test]
-    fn test_find_neighbor_right() {
-        let m = three_side_by_side();
-        assert_eq!(find_neighbor(&m, 0, Direction::Right), Some(1));
-        assert_eq!(find_neighbor(&m, 1, Direction::Right), Some(2));
-        assert_eq!(find_neighbor(&m, 2, Direction::Right), None);
-    }
-
-    #[test]
-    fn test_find_neighbor_left() {
-        let m = three_side_by_side();
-        assert_eq!(find_neighbor(&m, 0, Direction::Left), None);
-        assert_eq!(find_neighbor(&m, 1, Direction::Left), Some(0));
-        assert_eq!(find_neighbor(&m, 2, Direction::Left), Some(1));
-    }
 }
