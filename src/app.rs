@@ -16,6 +16,8 @@ struct DragState {
     monitor_idx: usize,
     offset_x: f64,
     offset_y: f64,
+    orig_x: i32,
+    orig_y: i32,
 }
 
 #[derive(Clone, Debug)]
@@ -241,6 +243,9 @@ impl App {
 
         if enabled_idx >= layout_monitors.len() { return; }
 
+        let orig_x = layout_monitors[enabled_idx].x;
+        let orig_y = layout_monitors[enabled_idx].y;
+
         if snap {
             layout::snap_to_far_side(&mut layout_monitors, enabled_idx, dir);
         } else {
@@ -248,6 +253,7 @@ impl App {
         }
 
         layout::auto_snap_all(&mut layout_monitors);
+        layout::resolve_overlaps(&mut layout_monitors, enabled_idx, orig_x, orig_y);
         layout::normalize(&mut layout_monitors);
         self.apply_layout_to_monitors(&layout_monitors);
         self.changed = true;
@@ -357,6 +363,8 @@ impl App {
                         monitor_idx: i,
                         offset_x: mon_x - mx,
                         offset_y: mon_y - my,
+                        orig_x: m.x,
+                        orig_y: m.y,
                     });
                     return;
                 }
@@ -384,11 +392,16 @@ impl App {
 
     fn handle_mouse_up(&mut self) {
         if let Some(drag) = self.drag.take() {
-            let _ = drag;
-            // Snap and normalize after drag
+            let enabled_idx = self.monitors.iter()
+                .take(drag.monitor_idx + 1)
+                .filter(|m| !m.disabled)
+                .count()
+                .saturating_sub(1);
+
             let mut layout_monitors = self.build_layout_monitors();
-            if !layout_monitors.is_empty() {
+            if enabled_idx < layout_monitors.len() {
                 layout::auto_snap_all(&mut layout_monitors);
+                layout::resolve_overlaps(&mut layout_monitors, enabled_idx, drag.orig_x, drag.orig_y);
                 layout::normalize(&mut layout_monitors);
                 self.apply_layout_to_monitors(&layout_monitors);
             }

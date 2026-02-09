@@ -522,6 +522,60 @@ pub fn auto_snap_all(monitors: &mut Vec<LayoutMonitor>) {
     }
 }
 
+/// Push `moved` monitor out of any overlapping monitors.
+/// Picks the push direction that places the monitor closest to `orig_x, orig_y`
+/// (its position before the operation), so it doesn't overshoot to the wrong side.
+pub fn resolve_overlaps(monitors: &mut Vec<LayoutMonitor>, moved: usize, orig_x: i32, orig_y: i32) {
+    for _ in 0..monitors.len() {
+        let mut best_push: Option<(i32, i32, i64)> = None; // (dx, dy, dist_to_origin)
+
+        for j in 0..monitors.len() {
+            if j == moved { continue; }
+
+            let h_overlap = monitors[moved].horizontal_overlap(&monitors[j]);
+            let v_overlap = monitors[moved].vertical_overlap(&monitors[j]);
+
+            if h_overlap.is_none() || v_overlap.is_none() {
+                continue;
+            }
+
+            let push_left = monitors[j].x - monitors[moved].right();
+            let push_right = monitors[j].right() - monitors[moved].x;
+            let push_up = monitors[j].y - monitors[moved].bottom();
+            let push_down = monitors[j].bottom() - monitors[moved].y;
+
+            let candidates = [
+                (push_left, 0),
+                (push_right, 0),
+                (0, push_up),
+                (0, push_down),
+            ];
+
+            // Score each candidate by how close the result would be to the original position
+            let best_for_j = candidates.iter()
+                .map(|&(dx, dy)| {
+                    let rx = (monitors[moved].x + dx - orig_x) as i64;
+                    let ry = (monitors[moved].y + dy - orig_y) as i64;
+                    (dx, dy, rx * rx + ry * ry)
+                })
+                .min_by_key(|c| c.2)
+                .unwrap();
+
+            if best_push.is_none() || best_for_j.2 < best_push.unwrap().2 {
+                best_push = Some(best_for_j);
+            }
+        }
+
+        match best_push {
+            Some((dx, dy, _)) => {
+                monitors[moved].x += dx;
+                monitors[moved].y += dy;
+            }
+            None => break,
+        }
+    }
+}
+
 /// Normalize layout so the top-left monitor is at (0, 0).
 pub fn normalize(monitors: &mut Vec<LayoutMonitor>) {
     if monitors.is_empty() { return; }
