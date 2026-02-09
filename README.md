@@ -2,7 +2,7 @@
 
 *a lovely tui for wrangling your hyprland monitors like nobodies business. built with rust ofc ofc*
 
-![Demo](media/demo.mp4)
+![Demo](media/demo.gif)
 
 ## What's This?
 
