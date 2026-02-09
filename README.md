@@ -1,29 +1,26 @@
 # monitui
 
-> *Because dragging windows around `hyprctl` commands is so 2023.*
-
-A delightfully minimal TUI for wrangling your Hyprland monitors. Built with Rust and way too much coffee.
+*a lovely tui for wrangling your hyprland monitors like nobodies business. built with rust ofc ofc*
 
 ![Demo](media/demo.mp4)
 
 ## What's This?
 
-You know that moment when you plug in your laptop at your desk and all your windows scatter across monitors like startled pigeons? Yeah, we fixed that.
+Growing up on MacOS everything just worked. Switching to Arch/hyprland I feel as though I can do anything, but `working` is not the default setting, messing with complicated monitor setups being top of the list. 
 
-`monitui` is a terminal UI that makes Hyprland monitor configuration actually *pleasant*. Move monitors around with `hjkl`, drag them with your mouse, save presets, and generally feel like a wizard.
+`monitui` is a terminal UI that makes Hyprland monitor configuration actually *pleasant*. Move monitors around with `hjkl`, drag them with your mouse (yes terminal + mouse is a good thing), save presets, and generally feel like a wizard.
 
-## Features That Spark Joy ✨
+## Nifty features
 
 - **Visual canvas** - See your monitors laid out spatially (not just a config file!)
-- **Keyboard shortcuts** - `hjkl` to move, `Shift+HJKL` to snap to edges, arrow keys work too
-- **Mouse support** - Because sometimes you just want to drag things
-- **Smart snapping** - Monitors auto-align and never overlap (we're not animals)
+- **Keyboard shortcuts** - `hjkl` to move, `Shift+HJKL` to really move edges, arrow keys work too
+- **Mouse support** - This is awesome, a little finnicky around the edges (fine tune with keyboard)
 - **Presets** - Save your desk/couch/coffee-shop setups and switch instantly
 - **Live preview** - See changes before you apply them
-- **Safety net** - 10-second confirmation window (for when you inevitably break everything)
+- **Safety net** - 10-second confirmation window (your monitor config should be more forgiving than `rm hdmi.monitor`)
+- **Workspace assignment** - I want my workspaces in order, nice and tidy. The presets menu can also restore where you last left them
 
 ![Three monitors](media/three-monitors.png)
-*Managing three monitors without losing your mind*
 
 ## Installation
 
@@ -31,7 +28,7 @@ You know that moment when you plug in your laptop at your desk and all your wind
 cargo install --path .
 ```
 
-Or if you're fancy:
+Or, if you wanna do things yourself:
 
 ```bash
 cargo build --release
@@ -72,23 +69,18 @@ You can also click on monitors with your mouse like it's the future.
 
 Hit `p` to open the preset menu. Your configs live in `~/.config/monitui/presets/`.
 
-Press number keys `1-9` to instantly load a preset. No more typing out the same `hyprctl` incantations every morning.
+Press number keys `1-9` to instantly load a preset. No more trying to find the correct file for home vs. work
 
 ![Ideal setup](media/ideal-setup.png)
-*The dream: all your monitors exactly where you want them*
-
-## Pro Tips
-
-- **Drag monitors** - Click and drag on the canvas to rearrange (it feels magical)
-- **Auto-snap** - Monitors automatically snap together when you get close
-- **No overlaps** - The layout engine prevents monitors from living inside each other (we've all been there)
-- **Safety first** - When you apply changes, you get 10 seconds to confirm. If you break everything, it auto-reverts.
+*The dream: all your monitors exactly where you want them. This is unironically kinda fun*
 
 ## Why Does This Exist?
 
-Look, we love `hyprctl`. It's powerful. But have you ever tried to mentally calculate monitor positions while staring at a JSON blob? That's a fast track to madness.
+Arch is great, everything should be in the terminal, but I should not have to deal with monitor positions as numbers and not graphics. 
 
 `monitui` gives you a visual representation of your monitors and lets you move them around like a normal human being. You can even use your mouse! Revolutionary, we know.
+
+This probably already exists. I had fun building this the way I wanted it. Feel free to mark this project as duplicate in the issues, I'd love to see other implementions. 
 
 ## Requirements
 
@@ -98,12 +90,17 @@ Look, we love `hyprctl`. It's powerful. But have you ever tried to mentally calc
 
 ## Contributing
 
-Found a bug? Have an idea? PRs welcome! This started as a "quick afternoon project" and spiraled into a full monitor management suite. Such is life.
+Feel free to contribute. If you're going to AI a PR, at least have a model >= Codex 5.3 or Opus 4.6 take care of it, anything less and I don't want it. 
 
 ## License
 
-MIT - Go wild, have fun, don't sue us if you drop a monitor while using this.
+MIT
 
 ---
 
 *Built with [ratatui](https://github.com/ratatui-org/ratatui), love, and an unhealthy number of external displays.*
+
+## Disclaimers
+
+This was vibe coded with Claude Opus 4.6. I tried to save some of the prompts in `doc/prompt`, but I missed most of them. Maybe I'll find a way to export them and share it with this.
+It works great on my machine (an Omarchy Hyprland setup), but no guarentees about yours. It passes all of the AI written tests, is written in Rust, and I've inspected enough of the code to feel confident publishing this. 
