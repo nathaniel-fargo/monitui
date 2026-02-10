@@ -869,6 +869,22 @@ fn monitors_equal(a: &[MonitorInfo], b: &[MonitorInfo]) -> bool {
         }
     }
 
+    // Allow uniform x/y translation differences between snapshots.
+    // Hyprland can preserve absolute coordinates after unplug/plug events,
+    // which may shift the whole layout while keeping relative placement intact.
+    let mut offset: Option<(i32, i32)> = None;
+
+    for (name, m1) in &map_a {
+        let Some(m2) = map_b.get(name) else {
+            continue;
+        };
+        if m1.disabled || m2.disabled {
+            continue;
+        }
+        offset = Some((m1.x - m2.x, m1.y - m2.y));
+        break;
+    }
+
     // Compare each monitor by name
     for (name, m1) in &map_a {
         let m2 = map_b.get(name).unwrap();  // Safe because we checked above
@@ -879,10 +895,16 @@ fn monitors_equal(a: &[MonitorInfo], b: &[MonitorInfo]) -> bool {
         if m1.height != m2.height {
             return false;
         }
-        if m1.x != m2.x {
-            return false;
-        }
-        if m1.y != m2.y {
+        if !m1.disabled && !m2.disabled {
+            if let Some((dx, dy)) = offset {
+                if m1.x - m2.x != dx || m1.y - m2.y != dy {
+                    return false;
+                }
+            } else if m1.x != m2.x || m1.y != m2.y {
+                return false;
+            }
+        } else if m1.x != m2.x || m1.y != m2.y {
+            // Keep strict position checks for disabled monitors.
             return false;
         }
         if m1.scale != m2.scale {
