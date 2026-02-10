@@ -13,7 +13,7 @@ fn monitors_conf_path() -> PathBuf {
 /// Generate monitors.conf content from current monitor state.
 fn generate_monitors_conf(monitors: &[MonitorInfo]) -> String {
     let mut lines = Vec::new();
-    lines.push("# Managed by monitui — https://github.com/your/monitui".to_string());
+    lines.push("# Managed by monitui — https://github.com/nathaniel-fargo/monitui".to_string());
     lines.push("# Manual edits will be overwritten on next apply.".to_string());
     lines.push(String::new());
 
