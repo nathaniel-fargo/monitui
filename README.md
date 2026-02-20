@@ -33,7 +33,7 @@ cargo install monitui
 # Arch (yay)
 yay -S monitui
 # Arch (paru)
-yay -S monitui
+paru -S monitui
 ```
 
 Or, if you wanna do things yourself:
